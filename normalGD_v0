@@ -1,0 +1,215 @@
+from math import exp
+from numpy import * 
+from numpy.linalg import * 
+
+filename = "/home/xiao/ProjetLibre/ml-100/u3.data"
+lamda = 2
+alpha = 0.01
+k = 4
+#in fact m=5, n = 21 but we like to ignore indice 0
+m = 31 
+n = 51 
+precision = 5
+#Q is initialized as a set of random number
+Q=[2 for i in xrange(m)]
+ObservationX=[]
+U=[]
+U_new=[]
+V=[]
+V_new=[]
+
+
+
+#a, b are matrix of the same dimension
+#n : num of rows
+#k : num of colomns
+def distance_matrix(a, b, n, k):
+    dist = 0
+    for i in xrange(n):
+        for j in xrange(k):
+            dist += (a[i][j] - b[i][j])**2
+    return dist
+        
+#omega is the set of nonzero indices in X
+#omega(i) is the set of nonzero indices in the ith row 
+#the result is [omage, complement set of omage]
+def getOmega(i):
+    T = ObservationX[i]
+    R1 = []
+    R2 = []
+    for j in xrange(1,n):
+        if T[j] != 0:
+            R1.append(j)
+        else:
+            R2.append(j)
+    return [R1, R2]
+    
+#Xi = Ui*(Vp-Vq)t
+def getX(i, p, q):
+    res = 0
+    for j in xrange(1, k):
+        res += U[i][j] * (V[p][j] - V[q][j])
+    return res
+
+#Yi = Ui*Vp^t -qi 
+def getY(i, p):
+    res = 0
+    for j in xrange(1, k):
+      res += U[i][j]*V[p][j]
+
+    return res - Q[i]
+    
+        
+def derivativeU(i, j):
+    derivative = lamda*U[i][j]
+    temp = 0
+    [omega, omega_comp] = getOmega(i)
+    for p in omega:
+        for q in omega_comp:
+            X = getX(i, p, q)
+            Y = getY(i, p)
+            A = 1/((1+exp(-X) + exp(-Y) + exp(-X-Y))**2)
+            temp += A*(exp(-X)*(V[p][j] - V[q][j]) + exp(-Y)*V[p][j] + (2*V[p][j]-V[q][j])*exp(-X-Y))
+
+    derivative -= temp
+    return derivative
+
+def derivativeV(k, j):
+    derivative = lamda * V[k][j]
+    temp = 0
+    for i in xrange(1, m):
+        [omega, omega_comp] = getOmega(i)
+        for p in omega:
+            for q in omega_comp:
+                X = getX(i, p, q)
+                Y = getY(i, p)
+                A =1/((1+ exp(-X) + exp(-Y) + exp(-X-Y))**2)
+                if k in omega:
+                    temp += (U[i][j]*(exp(-X)+ exp(-Y) + 2*exp(-X-Y)))*A
+                elif k in omega_comp:
+                    temp -= (U[i][j]*(exp(-X)+exp(-X-Y)))*A
+    derivative -= temp
+    return derivative
+     
+def getNewU():
+    for i in xrange(1, m):
+        for j in xrange(1, k):
+            U_new[i][j] = U[i][j] - alpha*derivativeU(i,j)
+
+def getNewV():
+    for i in xrange(1, n):
+        for j in xrange(1, k):
+            V_new[i][j] = V[i][j] - alpha*derivativeV(i,j)
+
+#U = U_new
+def copieU():
+    for i in xrange(1, m):
+        for j in xrange(1, k):
+            U[i][j] = U_new[i][j]
+
+#V = V_new
+def copieV():
+    for i in xrange(1, n):
+        for j in xrange(1, k):
+            V[i][j] = V_new[i][j]
+    
+def printU():
+    for i in xrange(1, m):
+        print U[i][1:k]
+
+def printV():
+    for i in xrange(1, n):
+        print V[i][1:k]
+
+def printX():
+    for i in xrange(1, m):
+        print ObservationX[i][1:n]
+
+#compute normeF square of a matrix U of dimension m*k
+def normeFS(S, a, b):
+    res = 0
+    for i in xrange(1,a):
+        for j in xrange(1, b):
+            res+= S[i][j] ** 2
+    return res
+
+def getPhi():
+    # first part of result
+    res1 = (lamda / 2) * ( normeFS(U, m, k) + normeFS(V, n, k))
+    # second part of result
+    res2 = 0
+    for i in xrange(1, m):
+        [omega, omega_comp] = getOmega(i)
+        for p in omega:
+            for q in omega_comp:
+                X = getX(i, p, q)
+                Y = getY(i, p)
+                res2 += 1/((1+exp(-X))*(1+exp(-Y)))
+    return res1 - res2
+    
+
+#X[m][n]
+ObservationX = [[0 for i in xrange(n)] for j in xrange(m)]
+
+#U_old[m][k]
+U = [[1 for i in xrange(k)] for j in xrange(m)]
+U_new = [[0 for i in xrange(k)] for j in xrange(m)]    
+    
+#V[n][k]
+V = [[1 for i in xrange(k)] for j in xrange(n)]
+V_new = [[0 for i in xrange(k)] for j in xrange(n)]
+
+
+#read ratings from the file
+f = open(filename, 'r')
+for line in f:
+    nums = [int(x) for x in line.split()]
+    client = nums[0]
+    film = nums[1]
+    rating = nums[2]
+    ObservationX[client][film] = rating
+
+
+#print "X:"
+#print ObservationX
+
+
+
+getNewU()
+getNewV()
+count = 0
+distanceU = distance_matrix(U_new, U, m, k)
+distanceV = distance_matrix(V_new, V, n, k)
+newDistanceU = precision*10 + distanceU
+newDistanceV = precision*10 + distanceV
+while( abs( distanceU - newDistanceU) > precision 
+or abs(distanceV - newDistanceV) > precision):
+    count += 1
+    print ("count :%d"% count)
+
+    distanceU = newDistanceU
+    distanceV = newDistanceV
+
+    copieU()
+    copieV()
+
+    getNewU()
+    getNewV()
+
+    newDistanceU = distance_matrix(U_new, U, m, k)
+    newDistanceV = distance_matrix(V_new, V, n, k)
+
+    print distanceU
+    print distanceV
+    print "\n"
+
+print "\n\n"
+print abs( distanceU - newDistanceU)
+print abs( distanceU - newDistanceU)
+
+print "U:"
+printU()
+print "V:"
+printV()
+print "Phi:"
+print getPhi()
