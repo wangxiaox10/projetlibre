@@ -1,141 +1,335 @@
 # -*- coding: utf-8 -*-
 """
-Created on Sat Mar  1 22:20:42 2014
+Created on Tue Mar  4 20:55:48 2014
 
 @author: xiao
-Date: 1 mars
-email: xiao.wang@polytechnique.edu
 """
-
 from numpy import * 
+from random import *
 from numpy.linalg import * 
-from math import sqrt
-from random import choice
+import matplotlib.pyplot as plt
 
-#######################################
-###  Initialisation des parametres  ###
-#######################################
+m=5
+n=20
+X=zeros((m,n))
+#read ratings from the file
+filename = "/home/xiao/ProjetLibre/ml-5/u.data"
+f = open(filename, 'r')
+for line in f:
+    nums = [int(x) for x in line.split()]
+    client = nums[0]
+    film = nums[1]
+    rating = nums[2]
+    X[client-1][film-1] = 1
 
-#m : number of users
-m
-#M : set of users
-#D : set of items
-n
-#X : matrix of training data, of dimension |M|*|D|
-X = zeros((m,n))
 
-#V : learning matrix, of dimension |M|*|D|
-V = zeros((m,n))
-
-#Omega is a map that stores the set of positive ranked items for each user 
-Omega={}
-
-#lambda
-learningSpeed = 1.0
-#constraint of weight
+lamda = 0.5
+precision = 0.001
 C=3
+K=3
+k=1
+V=zeros((m,n))
+for i in range(m):
+    for j in range(n):
+        V[i,j]=random()
 
-#finds and stores positive ranked items for all user
-#store in the dictionary Omega
-#The function and the data structure Omega are created to avoid repeated calculation
-#for each user u, Omega[i] is the set of indices of positive ranked items
-def generateOmega():
+Omega={}
+#print X
+#print V
+
+#########################################
+####   get posotive items of user u  ####
+#########################################
+
+def getDu():
+    '''get posotive items of user u'''
+    '''return an ensemble of set of positive items for each user'''
     for i in range(m):
-        Omega[i]= nonzero(X[i]>0)[0]  # find the indices of the nonzero elements
+        t = X[i,:]
+        Du=nonzero(t>0)[0]
+        Omega[i]=Du
         
-    
-#returns set of positive ranked items for user u
-def getPositiveItemSet(u):
-    return nonzero(X[i]>0)[0]    
+'''factorized models'''
+def f_d(d,u):
+    Du=Omega[u]
+    t=V[:,Du]
+    vec_items_pos_ranked = t.sum(axis=1)
+    return dot(vec_items_pos_ranked.T, V[:,d])/len(Du)
 
-#Learning set: V, of dimension m * len(D)
-#scoresOfU(int u): function that returns the vector of all item scores for the user u
-#lossFunction
-
-#factorized model to learn the ranking 
-def f_d(d, u):
-    D_u = getPositiveItemSet(u)
-    res = 0
-    for i in D_u:
-        res += dot(V[i].T, V[d])
-    return res/len(D_u)
-    
 def f_bar_d(bar_d, u):
-    D_u = getPositiveItemSet(u)
-    D = arange(m)
-    D_u_bar = setdiff1d(D, D_u)
-
-    res = 0.0
-    for j in D_u_bar:
-        res += dot(V[j].T,V[bar_d])
-    return res/(len(D_u_bar))   
+    return f_d(bar_d,u)
     
-
+def f(u):
+    res = empty(n)
+    for d in range(n):
+#        print "d:",d
+        res[d]=f_d(d,u)
+    return res
+        
 def g(u, d, bar_d):
-''' g(u,d,bar_d) = max(0, 1-f_d(u)+f_bar_d(u))'''
+    ''' g(u,d,bar_d) = max(0, 1-f_d(u)+f_bar_d(u))'''
+#    print "d",d,"u",u,"bar_d",bar_d,"f_d",f_d(d,u),"f_bar_d",f_bar_d(bar_d,u)
     return maximum(0, 1-f_d(d,u)+f_bar_d(bar_d,u))
     
-#AUC loss function, sometimes called margin ranking loss
-def AUC_loss_u(u):
-    D_u = getPositiveItemSet(u)
-    D = arange(m)
+    
+###################################################
+####  making one gradient step to matrix V     ####
+####  To minimize g=max(0, 1-fd(u)+f\bar d(u)) ####
+###################################################
+    
+def derivativeD(u,d,bar_d):
+    D_u = Omega[u]
+#    print V[u,D_u]
+    s = V[u,D_u].sum(axis=0)
+    return (-V[u,d]+V[u,bar_d]-s)/len(D_u)
+
+def derivativeBarD(u,d,bar_d):
+    D_u = Omega[u]
+    s = V[u,D_u].sum(axis=0)
+    return s/len(D_u)
+    
+########################################################
+####    localAUC Gradient Descent Algorithm         ####
+########################################################
+####  We hardly use it, because it's too costly.    ####
+########################################################
+    
+def localAUC_u(u):
+    '''we hardly use it, because it's too costly. '''
+    D_u=Omega[u]
+    D = arange(n)
     D_u_bar = setdiff1d(D, D_u)
-    res = 0.0
-    for d in D_u:        
+    
+    res=0
+    for d in D_u:
         for bar_d in D_u_bar:
-            res += g(u,d,bar_d)
+            res+=g(u,d,bar_d)
     return res
 
-def AUC_loss():
-'''AUC loss function equals the sum of AUCLoss for each u in U.'''
-    res = 0.0
+def localAUC():
+    res=0
     for u in range(m):
-        res += AUC_loss_u(u)
+        res+=localAUC_u(u)
     return res
-                
-        
-#SGD_AUC loss function
-#selects 1) a user, 2) a positive item and 3) a non-positive item at random, 
-#and makes a gradient step
-def SGD_AUC_loss(u):
-    #To be completed.
 
-def pick_positive_item(mean, std_deviation):
-    '''K-os algorithm for picking a positive item'''
-    ''' ???????????????????????????????????????? '''
-    return k
+
+################################################
+####    Implementation of algorithm 1       ####
+####   k-os for picking a positive item     ####
+################################################
+
+def pickPositiveItem():
+    '''Algorithm 1 in paper'''
     
-def K_os_AUC_loss():
-    '''Algorithm 3 in paper'''
-    iterationTime = 2000
-    while(iterationTime -- ):
-        #1. pick a random user u
-        #use random.choice()
-        u = choice(U)
-         
-        #pick a positive item d
-        d = pick_positive_item(0, 1/sqrt(m))
-        
-        #pick a random item bar_d
-        #use random.choice to select randomly an element from a set
-        D_u = getPositiveItemSet(u)
-        D = arange(m)
-        D_u_bar = setdiff1d(D, D_u)
-        
+    '''pick a user at random from the training set'''
+    u = randint(0,m-1)
+    '''pick i=1,...,K positive items d_i\in D_u'''
+    seq = sample(Omega[u],K)
+    '''compute f_di(u) for each i'''
+    f_seq = f_d(seq,u)
+    '''sort the scores by descending order'''
+    f_seq.sort()
+    f_seq=f_seq[::-1]
+    '''pick a position k \in 1,...K using the distribution'''
+    max_k_order = f_seq[k-1]
+    
+    for i in range(K):
+        if f_d(seq[i],u) == max_k_order:
+            return (u,seq[i])
+            
+################################################
+####    Implementation of algorithm 2       ####
+####           k-os WARP loss               ####
+################################################
+            
+def k_os_WARP_one_step():
+    '''pick a positive item d using pickPositiveItem()'''
+    (u,d)=pickPositiveItem()
+    N=0
+    
+    '''pick a random item bar_d'''
+    D_u = Omega[u]
+    D = arange(n)
+    D_u_bar = setdiff1d(D, D_u)
+    
+    bar_d = choice(D_u_bar)
+    N+=1
+    
+    '''start gradient descent learning'''
+    while f_bar_d(bar_d,u) <= f_d(d,u)-1 and N < n-len(D_u):
         bar_d = choice(D_u_bar)
-                
-        if f_d_bar(u)>f_d(u)-1:
-            V[u,d]+= learningSpeed*sum(V[u][D_u])*V[u,d]/len(D_u)
-            V[u,bar_d]-=learningSpeed*sum(V[j][D_u_bar]*V[u,bar_d])/len(D_u_bar)
-            if linalg.norm(V[:,d]) > C:
-                dnum = linalg.norm(V[:,d])
-                V[:,d]=C*V[:,d]/dnum
-
-
-                
-            
-            
+        N+=1
+    if f_bar_d(bar_d,u)>f_d(d,u)-1 :
+        coe = bigPhi_top((n-len(D_u))/N)
+        '''update V_ud and V_u\bar d'''
+        V[u,d] -= lamda * coe * derivativeD(u,d,bar_d)
+        V[u,bar_d] -= lamda * coe * derivativeBarD(u,d,bar_d)
         
+        '''Project weights to enforce constraints '''
+        '''if ||Vi||>C'''
+        '''then set Vi <- (C*Vi)/||Vi||'''
+    if( linalg.norm(V[:,d])>C):
+        V[:,d]=C*V[:,d]/linalg.norm(V[:,d])
+    if( linalg.norm(V[:,bar_d])>C):
+        V[:,d]=C*V[:,bar_d]/linalg.norm(V[:,bar_d])
+        
+def k_os_WARP():
+    iterationTime=0    
+    while(iterationTime<iterationlimits):
+        k_os_AUC_one_step()
+        '''register the results in a vector for figuration'''
+        distanceV[iterationTime]=localAUC()
+        iterationTime+=1
+
+################################################
+####    Implementation of algorithm 3       ####
+####          k-os AUC loss                 ####
+################################################
+
+def k_os_AUC_one_step():
+      
+    '''pick a positive item d using pickPositiveItem()'''
+    (u,d)=pickPositiveItem()
+    
+    '''pick a random item bar_d'''
+    D_u = Omega[u]
+    D = arange(n)
+    D_u_bar = setdiff1d(D, D_u)
+    
+    bar_d = choice(D_u_bar)
+    
+    if f_bar_d(bar_d,u) > f_d(d,u)-1:
+#        print "oui!"
+        '''one gradient step'''
+        V[u,d] -= lamda * derivativeD(u,d,bar_d)
+        V[u,bar_d] -= lamda * derivativeBarD(u,d,bar_d)
+        
+        '''Project weights to enforce constraints'''
+        if( linalg.norm(V[:,d])>C):
+            V[:,d]=C*V[:,d]/linalg.norm(V[:,d])
+        if( linalg.norm(V[:,bar_d])>C):
+            V[:,d]=C*V[:,bar_d]/linalg.norm(V[:,bar_d])
+            
+def k_os_AUC():
+    '''initialize model parameters'''
+    iterationTime=0    
+    while(iterationTime<iterationlimits):
+        k_os_AUC_one_step()
+        distanceV[iterationTime]=localAUC()
+        iterationTime+=1
+     
+
+#########################################################################
+#### Phi function converts the rank of a positive item d to a weight ####
+#########################################################################
+
+#this bigPhi function makes WARP equivalent to AUC.
+def bigPhi_AUC(eta):
+    return C*eta
+
+#This bigPhi focus on items on the top of list    
+def bigPhi_top(eta):
+    res = 0.
+    for i in range(eta):
+        res += 1/i
+    return res
     
         
+        
+#####################################################################
+####  the more user likes an item, the score ranked is higher    ####
+#####################################################################
+        
+#equation (2)
+def rank(d,u):
+    D_u = Omega[u]
+    D = arange(n)
+    D_u_bar = setdiff1d(D, D_u)
     
+    fu = f_d(d,u)
+
+    count = 0    
+    for bar_d in D_u_bar:
+        if fu >= 1 + f_bar_d( bar_d, u):
+            count += 1
+    return count
+    
+def testRank():
+    for u in range(m):
+        print "u:", u
+        D_u = Omega[u]
+        for d in D_u:
+            print "d:",d, rank(d,u)
+
+####################################################################
+####    General loss function function                          ####
+####    Definition see the right-up corner in the 3rd page      ####
+####################################################################
+
+def k_os_lossFunction_u(u):
+    '''rank(d,u), where d is item in the kthe position'''
+    '''sort the scores by descending order'''
+    seq = Omega[u]    
+    f_seq = f_d(seq,u)    
+    f_seq.sort()
+    f_seq=f_seq[::-1]
+    '''pick a position k \in 1,...K using the distribution'''
+    max_k_order = f_seq[k-1]
+    
+    for i in range(K):
+        if f_d(seq[i],u) == max_k_order:
+            order = seq[i]
+            return bigPhi(rank(order, u))
+            
+def k_os_lossFunction():
+    res=0
+    for u in range(m):
+        res += k_os_lossFunction_u()
+    return res
+    
+######################################################
+####  Implementation  of regular AUC algorithm    ####
+######################################################
+    
+def chooseRandoms():
+    u = randint(0,m-1)
+    D_u = Omega[u]
+    while(len(D_u)==n):
+        u = randint(0,m-1)
+        D_u = Omega[u]
+        
+    D = arange(n)
+    D_u_bar = setdiff1d(D, D_u)
+    
+    d = choice(D_u)
+    bar_d = choice(D_u_bar)
+    return (u,d,bar_d)
+            
+    
+def gda_localAUC_oneStep():
+    (u,d,bar_d)=chooseRandoms()
+    if(f_d(d,u)<f_bar_d(bar_d,u)+1):
+        V[u,d] -= lamda * derivativeD(u,d,bar_d)
+        V[u,bar_d] -= lamda * derivativeBarD(u,d,bar_d)
+
+def gda_localAUC():
+    i=0
+    
+    print "iteration:",i
+    gda_localAUC_oneStep()
+    
+    distanceV[i]=localAUC()
+    i+=1        
+    
+    while i<iterationTime:
+        print "iteration:",i
+        gda_localAUC_oneStep()
+        distanceV[i]=localAUC()
+        i+=1
+    
+#    
+iterationlimits = 20
+distanceV=empty(iterationlimits)
+getDu()
+
+testRank()
