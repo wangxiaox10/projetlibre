@@ -9,33 +9,61 @@ from random import *
 from numpy.linalg import * 
 import matplotlib.pyplot as plt
 
+###################################
+#### Original data             ####
+###################################
+#m number of users
 m=5
+#number of items 
 n=20
+#matrix of observation
 X=zeros((m,n))
-#read ratings from the file
-filename = "/home/xiao/ProjetLibre/ml-5/u.data"
-f = open(filename, 'r')
-for line in f:
-    nums = [int(x) for x in line.split()]
-    client = nums[0]
-    film = nums[1]
-    rating = nums[2]
-    X[client-1][film-1] = 1
+fadress = "/home/xiao/ProjetLibre/ml-5/u2.data"
+
+#m is the dimension of the embedding
+#usually like 50 or 100
+dim_embedding = 5
 
 
+###################################
+#### Learning parameters       ####
+###################################
 lamda = 0.5
 precision = 0.001
 C=3
-K=3
+K=2
 k=1
-V=zeros((m,n))
-for i in range(m):
+iterationlimits=500
+distanceV=empty(iterationlimits)
+
+#V is matrix of dimension dim_embedding * n 
+V=zeros((dim_embedding,n))
+for i in range(dim_embedding):
     for j in range(n):
         V[i,j]=random()
-
+        
+#########################################
+#### Intermediaire data structures   ####
+#########################################
 Omega={}
-#print X
-#print V
+#the set of set of non-positive items for each user
+Omega_comp={}
+
+
+#########################################
+####    read ratings from the file   ####
+#########################################
+def readDataFromFile(fadress):
+    '''the rating is binaire'''
+    filename = fadress
+    f = open(filename, 'r')
+    for line in f:
+        nums = [int(x) for x in line.split()]
+        client = nums[0]
+        film = nums[1]
+        rating = nums[2]
+        X[client-1][film-1] = 1
+
 
 #########################################
 ####   get posotive items of user u  ####
@@ -46,8 +74,13 @@ def getDu():
     '''return an ensemble of set of positive items for each user'''
     for i in range(m):
         t = X[i,:]
-        Du=nonzero(t>0)[0]
-        Omega[i]=Du
+        D_u=nonzero(t>0)[0]
+        Omega[i]=D_u
+    
+        D = arange(n)
+        D_u_bar = setdiff1d(D, D_u)
+        Omega_comp[i] = D_u_bar
+        
         
 '''factorized models'''
 def f_d(d,u):
@@ -328,8 +361,3 @@ def gda_localAUC():
         i+=1
     
 #    
-iterationlimits = 20
-distanceV=empty(iterationlimits)
-getDu()
-
-testRank()
