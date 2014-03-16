@@ -5,42 +5,36 @@ Created on Tue Mar  4 20:55:48 2014
 @author: xiao
 """
 from numpy import * 
-from random import *
+from math import * 
 from numpy.linalg import * 
+from multiprocessing import pool
 import matplotlib.pyplot as plt
 
 ###################################
 #### Original data             ####
 ###################################
 #m number of users
-m=5
+m=100
 #number of items 
-n=20
+n=1238
 #matrix of observation
 X=zeros((m,n))
-fadress = "/home/xiao/ProjetLibre/ml-5/u2.data"
-
-#m is the dimension of the embedding
+#m is the dimension of the embedding 
 #usually like 50 or 100
-dim_embedding = 5
+dim_embedding = 10
 
 
 ###################################
 #### Learning parameters       ####
 ###################################
-lamda = 0.5
+lamda = 0.05
 precision = 0.001
-C=3
+C=1
 K=2
 k=1
-iterationlimits=500
-distanceV=empty(iterationlimits)
+iterationlimits=500000
 
-#V is matrix of dimension dim_embedding * n 
-V=zeros((dim_embedding,n))
-for i in range(dim_embedding):
-    for j in range(n):
-        V[i,j]=random()
+distanceV=empty(100)
         
 #########################################
 #### Intermediaire data structures   ####
@@ -49,6 +43,19 @@ Omega={}
 #the set of set of non-positive items for each user
 Omega_comp={}
 
+
+
+#V is matrix of dimension dim_embedding * n 
+V = random.normal(0, 1.0/sqrt(dim_embedding), dim_embedding * n)
+V = reshape(V, (dim_embedding, n))
+
+#for i in range(dim_embedding):
+#    for j in range(n):
+#        V[i,j]=random()
+#    if( linalg.norm(V[:,i])>C):
+#        V[:,i]=C*V[:,i]/linalg.norm(V[:,i])
+print "finish initialize V"
+        
 
 #########################################
 ####    read ratings from the file   ####
@@ -59,11 +66,12 @@ def readDataFromFile(fadress):
     f = open(filename, 'r')
     for line in f:
         nums = [int(x) for x in line.split()]
+        if len(nums)<3:
+            print nums
         client = nums[0]
         film = nums[1]
-        rating = nums[2]
+#        rating = nums[2]
         X[client-1][film-1] = 1
-
 
 #########################################
 ####   get posotive items of user u  ####
@@ -85,7 +93,9 @@ def getDu():
 '''factorized models'''
 def f_d(d,u):
     Du=Omega[u]
+    global V
     t=V[:,Du]
+#    print t
     vec_items_pos_ranked = t.sum(axis=1)
     return dot(vec_items_pos_ranked.T, V[:,d])/len(Du)
 
@@ -102,6 +112,7 @@ def f(u):
 def g(u, d, bar_d):
     ''' g(u,d,bar_d) = max(0, 1-f_d(u)+f_bar_d(u))'''
 #    print "d",d,"u",u,"bar_d",bar_d,"f_d",f_d(d,u),"f_bar_d",f_bar_d(bar_d,u)
+#    print maximum(0, 1-f_d(d,u)+f_bar_d(bar_d,u))
     return maximum(0, 1-f_d(d,u)+f_bar_d(bar_d,u))
     
     
@@ -110,19 +121,46 @@ def g(u, d, bar_d):
 ####  To minimize g=max(0, 1-fd(u)+f\bar d(u)) ####
 ###################################################
     
+#one gradient step to each element in matrix V
+def derivativeOneStep(u,d, bar_d):
+    '''for element Vpq, p in range(m), q in range( #items)'''
+    '''for each p:'''
+    '''if q \in Du and q != d: step = -Vpd + Vpbar_d'''
+    '''if q \in Du and q = d:  step = -Vpq + Vpbar+d + \sum_{i \in Du} Vpi'''
+    '''if q not \in Du and q != bar_d: step = 0'''
+    '''if q not \in Du and q == bar_d: step = \sum_{i \in Du} Vpi'''
+    print "start computing derivatives", u, d, bar_d
+    
+    D_u = Omega[u]
+    step = zeros((dim_embedding, n))
+    temp = 0
+    for q in D_u:
+        step[:, q] = -V[:,d] + V[:, bar_d]
+        temp += V[:,q]
+    step[:,d] += temp
+    step[:,bar_d] += temp
+
+    print "finishing computing step"
+    
+    return step
+    
+
+
 def derivativeD(u,d,bar_d):
     D_u = Omega[u]
 #    print V[u,D_u]
+    '''problem here! V[u, D_u]'''
     s = V[u,D_u].sum(axis=0)
     return (-V[u,d]+V[u,bar_d]-s)/len(D_u)
 
 def derivativeBarD(u,d,bar_d):
     D_u = Omega[u]
+    '''problem here! V[u, D_u]'''
     s = V[u,D_u].sum(axis=0)
     return s/len(D_u)
     
 ########################################################
-####    localAUC Gradient Descent Algorithm         ####
+####    localAUC                                    ####
 ########################################################
 ####  We hardly use it, because it's too costly.    ####
 ########################################################
@@ -130,18 +168,25 @@ def derivativeBarD(u,d,bar_d):
 def localAUC_u(u):
     '''we hardly use it, because it's too costly. '''
     D_u=Omega[u]
-    D = arange(n)
-    D_u_bar = setdiff1d(D, D_u)
+#    D = arange(n)
+#    D_u_bar = setdiff1d(D, D_u)
+    D_u_bar = Omega_comp[u]
     
     res=0
+    
+    fvalue = f(u)
     for d in D_u:
+        f_d_u = fvalue[d]
         for bar_d in D_u_bar:
-            res+=g(u,d,bar_d)
+            f_bar_d_u = fvalue[bar_d]
+            res += maximum(0, 1-f_d_u +f_bar_d_u )
+#            res+=g(u,d,bar_d)
     return res
 
 def localAUC():
     res=0
     for u in range(m):
+        print "localAUC u:", u, "res:", res
         res+=localAUC_u(u)
     return res
 
@@ -334,16 +379,26 @@ def chooseRandoms():
     D = arange(n)
     D_u_bar = setdiff1d(D, D_u)
     
-    d = choice(D_u)
-    bar_d = choice(D_u_bar)
-    return (u,d,bar_d)
+    i = randint(0, len(D_u)-1)
+    j = randint(0, len(D_u_bar)-1)
+    d = D_u[i]
+    bar_d = D_u_bar[j]
+    return (u, d, bar_d)
+#    d = random.choice(D_u)
+#    bar_d = random.choice(D_u_bar)
+
             
     
 def gda_localAUC_oneStep():
     (u,d,bar_d)=chooseRandoms()
     if(f_d(d,u)<f_bar_d(bar_d,u)+1):
-        V[u,d] -= lamda * derivativeD(u,d,bar_d)
-        V[u,bar_d] -= lamda * derivativeBarD(u,d,bar_d)
+        global V
+        V -= lamda * derivativeOneStep(u, d, bar_d)
+        for i in range (n):
+            if( linalg.norm(V[:,i])>C):
+               V[:,i]=C*V[:,i]/linalg.norm(V[:,i])
+#        V[u,d] -= lamda * derivativeD(u,d,bar_d)
+#        V[u,bar_d] -= lamda * derivativeBarD(u,d,bar_d)
 
 def gda_localAUC():
     i=0
@@ -352,12 +407,27 @@ def gda_localAUC():
     gda_localAUC_oneStep()
     
     distanceV[i]=localAUC()
+    print distanceV[i]
     i+=1        
     
-    while i<iterationTime:
+    while i<iterationlimits:
         print "iteration:",i
         gda_localAUC_oneStep()
-        distanceV[i]=localAUC()
+        if i % 5000 == 0:
+            distanceV[i/5000] = localAUC()
+#        distanceV[i]=localAUC()
         i+=1
+#    plot(distanceV)
+    
     
 #    
+    
+######################################################
+####               test normal AUC                ####
+######################################################
+
+#after iterations show localAUC
+fadress = "/home/xiao/ProjetLibre/matrix/matrixInfo"
+readDataFromFile(fadress)
+getDu()
+gda_localAUC()
